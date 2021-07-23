@@ -1,0 +1,331 @@
+﻿@page "/"
+@page "/status"
+@inject IHttpService Http
+@inject IJSRuntime jsRuntime
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject ILocalStorageService LocalStorageService
+@inject IConfiguration Configuration
+
+<div style="display: grid; grid-gap: 10px; height: 100%; grid-template-rows: auto 1fr;">
+    @if (groupedSubdivisions.Count != 0)
+    {
+        <MudGrid Class="pt-2">
+            <MudItem xs="12" md="12">
+                <MudSelect T="string" Label="Subdivisions" MultiSelection="true" @bind-Value="value" @bind-SelectedValues="options" OffsetY="true" Variant="Variant.Filled">
+                    @foreach (IGrouping<int, SubivisionModel> subdivision in groupedSubdivisions)
+                    {
+                        <MudSelectItem T="string" Value="@subdivision.FirstOrDefault().Subdivision">@subdivisions.Count(s => s.SubdivisionId == subdivision.Key) - @subdivision.FirstOrDefault().Subdivision</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+        </MudGrid>
+
+        <MudTable id="status_subdivisionTable" Style="overflow-y: auto;" T="SubivisionModel" Items="subdivisions.Where(s => options.Contains(s.Subdivision)).ToList()" Hover="true" FixedHeader="true" Striped="true" @bind-SelectedItem="selectedItem" OnRowClick="@(args => OnRowClicked(args))">
+            <HeaderContent>
+                @foreach (var h in headings)
+                {
+                    <MudTh>@h</MudTh>
+                }
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Subdivision">@context.Subdivision</MudTd>
+                <MudTd DataLabel="Lot Name">@context.ShopName</MudTd>
+                <MudTd></MudTd>
+            </RowTemplate>
+            <RowEditingTemplate>
+                <MudTd DataLabel="Subdivision">@context.Subdivision</MudTd>
+                <MudTd DataLabel="Lot Name">@context.ShopName</MudTd>
+                <MudTd style="text-align: end;">
+                    <MudButtonGroup Color="Color.Primary" Variant="Variant.Outlined">
+                        @if (!context.FinalMeasure)
+                        {
+                            <MudIconButton Icon="@(context.FinalMeasure ? Icons.Material.Filled.RemoveDone : Icons.Material.Filled.Done)" Color="Color.Primary" Size="Size.Medium"
+                                           OnClick="@(() => PassThroughDialog("Toggle Final Measure", $"Are you sure you want set Final Measure to {!context.FinalMeasure}", MarkJobFinalMeasured))" />
+                        }
+                        @if (String.IsNullOrWhiteSpace(context.LongLat))
+                        {
+                            <MudIconButton Icon="@(String.IsNullOrWhiteSpace(context.LongLat) ? Icons.Material.Outlined.Room : Icons.Material.Filled.Room)" Color="Color.Primary" Size="Size.Medium"
+                                           OnClick="@(() => PassThroughDialog("Set Location", "Are you sure you want set the pin to your current location?", SetLocation))" />
+                        }
+                        <MudIconButton Icon="@menuIcon" OnClick="@(() => OpenHomeStatusDrawer())" />
+                    </MudButtonGroup>
+                </MudTd>
+            </RowEditingTemplate>
+        </MudTable>
+
+        if (homeStatuses is not null && homeStatuses.Count > 0)
+        {
+            <MudDrawer @bind-Open="@homeStatusOpen" Width="@width" Height="@height" Anchor="@anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
+                <MudDrawerHeader>
+                    <MudText Typo="Typo.h6">Home Status</MudText>
+                </MudDrawerHeader>
+                @if (selectedItem is not null)
+                {
+                    <MudList Clickable="true">
+                        @foreach (var homeStatus in homeStatuses)
+                        {
+                            <MudListItem Style="@(selectedItem.HomeStatus == homeStatus.Status ? "color: var(--mud-palette-primary-darken);" : "")" OnClick="@(() => SetJobHomeStatus(homeStatus.Status))" Text="@($"{homeStatus.Category} {homeStatus.Process} - {homeStatus.TimeFrame}")" />
+                        }
+                    </MudList>
+                }
+            </MudDrawer>
+        }
+    }
+    else
+    {
+        <MudItem xs="12" md="12" Class="pa-3">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        </MudItem>
+    }
+</div>
+
+<style>
+    .mud-table-container {
+        min-height: 0;
+        max-height: 100%
+    }
+
+    .mud-menu-container {
+        max-width: fit-content !important;
+    }
+</style>
+
+@code {
+    private string value { get; set; } = "Nothing selected";
+    private HashSet<string> options { get; set; } = new HashSet<string>() { };
+
+    string[] headings = { "Subdivision", "Name", "" };
+    private List<SubivisionModel> subdivisions = new();
+    private List<IGrouping<int, SubivisionModel>> groupedSubdivisions = new();
+    private List<HomeStatus> homeStatuses;
+
+    private SubivisionModel selectedItem = null;
+
+    private string menuIcon = Icons.Material.Filled.ArrowRight;
+    private bool homeStatusOpen;
+    private Anchor anchor = Anchor.Right;
+    string width, height;
+
+    private delegate void FunctionToRun();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var mobile = await jsRuntime.InvokeAsync<bool>("isDevice");
+        Snackbar.Configuration.PositionClass = Defaults.Classes.Position.TopRight;
+        if (mobile)
+        {
+            Snackbar.Configuration.PositionClass = Defaults.Classes.Position.BottomCenter;
+            menuIcon = Icons.Material.Filled.ArrowDropDown;
+            anchor = Anchor.Bottom;
+        }
+
+        SetupHomeStatus();
+        SetupSubdivision();
+    }
+
+    private async void SetupSubdivision()
+    {
+        subdivisions = await LocalStorageService.GetItemAsync<List<SubivisionModel>>("subdivisions");
+        if (subdivisions is not null && subdivisions.Count > 0)
+        {
+            groupedSubdivisions = subdivisions.ToList().GroupBy(s => s.SubdivisionId).ToList();
+            StateHasChanged();
+        }
+        try
+        {
+            var subdivisionsFromAPI = await Http.GetAsync<List<SubivisionModel>>("/Status/GetGroupedSubdivisions");
+
+            if (subdivisionsFromAPI is not null && subdivisionsFromAPI.Count > 0)
+            {
+                subdivisions = subdivisionsFromAPI;
+                await LocalStorageService.SetItemAsync<List<SubivisionModel>>("subdivisions", subdivisions);
+                groupedSubdivisions = subdivisions.ToList().GroupBy(s => s.SubdivisionId).ToList();
+                StateHasChanged();
+            }
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private async void SetupHomeStatus()
+    {
+        homeStatuses = await LocalStorageService.GetItemAsync<List<HomeStatus>>("homeStatuses");
+        try
+        {
+            var homeStatusesFromAPI = await Http.GetAsync<List<HomeStatus>>("/Status/GetHomeStatus");
+            if (homeStatusesFromAPI is not null && homeStatusesFromAPI.Count > 0)
+            {
+                homeStatuses = homeStatusesFromAPI;
+                await LocalStorageService.SetItemAsync<List<HomeStatus>>("homeStatuses", homeStatuses);
+            }
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private void OpenHomeStatusDrawer()
+    {
+        //this.anchor = anchor;
+        homeStatusOpen = true;
+
+        switch (anchor)
+        {
+            case Anchor.Right:
+                width = "500px";
+                height = "100%";
+                break;
+                //case Anchor.Bottom:
+                //    width = "100%";
+                //    height = "200px";
+                //    break;
+        }
+    }
+
+    private async void OnRowClicked(TableRowClickEventArgs<SubivisionModel> args)
+    {
+        if (selectedItem is null)
+        {
+            return;
+        }
+
+        await jsRuntime.InvokeVoidAsync("RemoveCommitButtonFromMudTable");
+    }
+
+    private async void PassThroughDialog(string title, string contentText, FunctionToRun func)
+    {
+        DialogParameters parameters = new();
+
+        parameters.Add("ContentText", contentText);
+        parameters.Add("ButtonText", "Confirm");
+        parameters.Add("Color", Color.Primary);
+
+        var dialog = DialogService.Show<MudDialogTemplate>(title, parameters);
+        var result = await dialog.Result;
+
+        if (!result.Cancelled)
+        {
+            func();
+        }
+    }
+
+    private async void MarkJobFinalMeasured()
+    {
+        if (selectedItem is null)
+        {
+            return;
+        }
+
+        SubivisionModel job = selectedItem.Clone();
+
+        await BackgroundSyncCall("/Status/MarkJobFinalMeasured", job, "Final measure");
+        selectedItem.FinalMeasure = !selectedItem.FinalMeasure;
+        StateHasChanged();
+    }
+
+    private async Task BackgroundSyncCall(string endPoint, SubivisionModel job, string propertyToChange)
+    {
+        try
+        {
+            await Http.PutAsync(endPoint, job, false);
+            Snackbar.Add($"{propertyToChange} set.", Severity.Success);
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Error changing final measure.", Severity.Error);
+        }
+        finally
+        {
+            try
+            {
+                await Http.PutAsync(endPoint, job, true);
+            }
+            catch (Exception)
+            {
+                Console.WriteLine("Change is set to be synced with the database.");
+            }
+            Snackbar.Add($"{propertyToChange} will be changed", Severity.Info);
+
+        }
+    }
+
+    private async void SetLocation()
+    {
+        if (selectedItem is null)
+        {
+            return;
+        }
+
+        SubivisionModel job = selectedItem.Clone();
+
+        string result = "";
+        try
+        {
+            result = await jsRuntime.InvokeAsync<string>("GetLocation");
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Error getting location.", Severity.Error);
+        }
+
+        try
+        {
+            job.LongLat = result;
+
+            selectedItem.LongLat = job.LongLat;
+            StateHasChanged();
+            //await Http.PutAsync("/Status/MarkJobFinalMeasured", job, false);
+            await BackgroundSyncCall("/Status/SetJobLocation", job, "Job location");
+            Snackbar.Add("Location set.", Severity.Success);
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Error setting location.", Severity.Error);
+        }
+    }
+
+    private async void SetJobHomeStatus(int homeStatusStatus)
+    {
+        if (selectedItem is null || selectedItem.HomeStatus == homeStatusStatus)
+        {
+            return;
+        }
+
+        SubivisionModel job = selectedItem.Clone();
+        selectedItem.HomeStatus = homeStatusStatus;
+        //await Http.PutAsync("/Status/SetJobHomeStatus", selectedItem, false);
+        await BackgroundSyncCall("/Status/SetJobHomeStatus", job, "Home status");
+        //Snackbar.Add($"Home status updated.", Severity.Success);
+    }
+
+}
+
+@code {
+    //[CascadingParameter]
+    //public Task<AuthenticationState> AuthState { get; set; }
+
+    //private bool isAuthenticated = false;
+    //private string userName;
+    //private bool isAdmin = false;
+    //private bool isCashier = false;
+    //private bool isManager = false;
+
+    //protected override async Task OnInitializedAsync()
+    //{
+    //var authState = await AuthState;
+    //isAuthenticated = authState.User.Identity.IsAuthenticated;
+
+    //if (isAuthenticated)
+    //{
+    //    userName = authState.User.FindFirst("unique_name").Value;
+
+    //    isAdmin = authState.User.FindFirst("Role").Value == "Admin";
+
+    //    isCashier = authState.User.FindFirst("Role").Value == "Cashier";
+    //    isManager = authState.User.FindFirst("Role").Value == "Manager";
+    //}
+    //}
+
+}

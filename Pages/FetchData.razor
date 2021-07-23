@@ -1,0 +1,86 @@
+﻿@page "/fetchdata"
+@inject IHttpService Http
+
+<MudText Typo="Typo.h6">Weather forecast</MudText>
+
+@if (forecasts == null)
+{
+    if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <p><em>@errorMessage</em></p>
+    }
+    else
+    {
+        <p><em>Loading...</em></p>
+    }
+}
+else
+{
+    <MudPaper Class="pa-2 ma-2">
+        <MudChart ChartType="ChartType.Line" ChartSeries="@Series" @bind-SelectedIndex="Index" XAxisLabels="@XAxisLabels" ChartOptions="options" Width="100%" Height="350px"></MudChart>
+    </MudPaper>
+
+    <MudSimpleTable Style="overflow-x: auto;">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Temp. (C)</th>
+                <th>Temp. (F)</th>
+                <th>Summary</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var forecast in forecasts)
+            {
+                <tr>
+                    <td>@forecast.Date.ToShortDateString()</td>
+                    <td>@forecast.TemperatureC</td>
+                    <td>@forecast.TemperatureF</td>
+                    <td>@forecast.Summary</td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+}
+
+@code {
+    private int Index = -1;
+    private List<ChartSeries> Series = new();
+    public string[] XAxisLabels;
+    private ChartOptions options = new ChartOptions();
+
+    private WeatherForecast[] forecasts;
+    private string errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            forecasts = await Http.GetAsync<WeatherForecast[]>("/WeatherForecast");
+
+            XAxisLabels = forecasts.Select(f => f.Date.ToShortDateString()).ToArray();
+
+            var tempuratureData = forecasts.Select(f => Convert.ToDouble(f.TemperatureF)).ToArray();
+            var chartSeries = new ChartSeries() { Name = "Temp", Data = tempuratureData };
+
+            options.ChartPalette = new string[] { "#00cf34" };
+
+            Series.Add(chartSeries);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = !string.IsNullOrWhiteSpace(ex.Message) ? ex.Message : ex.InnerException.Message;
+        }
+    }
+
+    public class WeatherForecast
+    {
+        public DateTime Date { get; set; }
+
+        public int TemperatureC { get; set; }
+
+        public string Summary { get; set; }
+
+        public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    }
+}

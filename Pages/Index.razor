@@ -1,0 +1,89 @@
+﻿@inject IHttpService Http
+
+@*<div class="card mt-4">*@
+    <MudText Typo="Typo.h4">You're logged in with Blazor WebAssembly & JWT!!</MudText>
+    @*<div class="card-body">*@
+        @if (loading)
+        {
+            <div class="spinner-border spinner-border-sm"></div>
+        }
+        @if (users is not null)
+        {
+            <MudTable Items="@users" Dense="true" Hover="true" FixedHeader="true" Height="400px;" Filter="new Func<DataUserNoPasswordModel,bool>(FilterFunc)">
+                <ToolBarContent>
+                    <MudText Typo="Typo.h6">Users</MudText>
+                    <MudToolBarSpacer />
+                    <MudTextField @bind-Value="searchString" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+                </ToolBarContent>
+                <HeaderContent>
+                    <MudTh>User Id</MudTh>
+                    <MudTh>Name</MudTh>
+                    <MudTh>Role</MudTh>
+                    <MudTh>Email</MudTh>
+                    <MudTh>Is Active</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="User Id">@context.UserId</MudTd>
+                    <MudTd DataLabel="Name">@context.FirstAndLastName</MudTd>
+                    <MudTd DataLabel="Role">@context.RoleType.ToString()</MudTd>
+                    <MudTd DataLabel="Email">@context.Email</MudTd>
+                    <MudTd DataLabel="Is Active">@context.IsActive</MudTd>
+                </RowTemplate>
+                <PagerContent>
+                    <MudTablePager />
+                </PagerContent>
+            </MudTable>
+        }
+        else if (!loading)
+        {
+            <MudText Typo="Typo.h6">
+                FAILED: @error
+            </MudText>
+        }
+    @*</div>
+</div>*@
+
+@code {
+    [CascadingParameter]
+    public Task<AuthenticationState> AuthState { get; set; }
+    private bool isAuthenticated = false;
+
+    private bool loading;
+    private string error;
+
+    private string searchString = "";
+    private IEnumerable<DataUserNoPasswordModel> users;
+
+    protected override async Task OnInitializedAsync()
+    {
+        loading = true;
+        try
+        {
+            var authState = await AuthState;
+            isAuthenticated = authState.User.Identity.IsAuthenticated;
+
+            if (isAuthenticated)
+            {
+                users = await Http.GetAsync<IEnumerable<DataUserNoPasswordModel>>("/Login/GetUsers");
+            }
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        loading = false;
+    }
+
+    private bool FilterFunc(DataUserNoPasswordModel user)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+        if (user.RoleType.ToString().Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (user.FirstAndLastName.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if ($"{user.UserId} {user.BranchId} {user.PersonId}".Contains(searchString))
+            return true;
+        return false;
+    }
+}

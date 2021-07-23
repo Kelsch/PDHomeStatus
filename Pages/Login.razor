@@ -1,0 +1,64 @@
+﻿@page "/login"
+@inject IAuthenticationService AuthService
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
+
+@using System.ComponentModel.DataAnnotations
+
+<div class="mx-auto pa-6" style="max-width: 400px; display: grid; align-items: center; height: 75vh;">
+    @if (loading)
+    {
+        <MudPaper Class="pa-8" Style="height: 198px;">
+            <MudOverlay Visible="true" DarkBackground="true">
+                <MudProgressCircular Color="Color.Secondary" Indeterminate="true" />
+            </MudOverlay>
+        </MudPaper>
+    }
+    else
+    {
+        <EditForm Model="@model" OnValidSubmit="ExecuteLogin">
+            <DataAnnotationsValidator />
+            <MudCard>
+                <MudCardContent>
+                    <MudTextField Label="First name" @bind-Value="model.UserName" For="@(() => model.UserName)" />
+                    <MudTextField Label="Password" Class="mt-3" @bind-Value="model.Password" For="@(() => model.Password)" InputType="InputType.Password" />
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Class="ml-auto">Login</MudButton>
+                </MudCardActions>
+            </MudCard>
+        </EditForm>
+    }
+</div>
+@code {
+    private AuthenticationUserModel model = new();
+    private bool loading;
+    private string error;
+
+    private async Task ExecuteLogin()
+    {
+        loading = true;
+        var result = await AuthService.Login(model);
+
+        if (result.Success)
+        {
+            var returnUrl = NavigationManager.QueryString("returnUrl") ?? "/";
+            NavigationManager.NavigateTo(returnUrl);
+            Snackbar.Clear();
+        }
+        else
+        {
+            error = result.Message;
+            ChangePositionSnackbar(error, Severity.Error, Defaults.Classes.Position.BottomCenter);
+        }
+        loading = false;
+    }
+
+    private void ChangePositionSnackbar(string message, MudBlazor.Severity severityLevel, string position)
+    {
+        Snackbar.Clear();
+        Snackbar.Configuration.PositionClass = position;
+        Snackbar.Add(message, severityLevel);
+    }
+
+}
