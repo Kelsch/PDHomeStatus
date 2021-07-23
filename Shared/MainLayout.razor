@@ -1,0 +1,115 @@
+﻿@inherits LayoutComponentBase
+@inject NavigationManager _navigationManager
+@using System.Net
+
+<MudLayout>
+    <AuthorizeView>
+        <MudAppBar Elevation="1">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@ToggleDrawer" />
+            <MudAppBarSpacer />
+            <MudText Class="ml-n3" Typo="Typo.h5">@LayoutTitle</MudText>
+            <MudAppBarSpacer />
+        </MudAppBar>
+        <MudDrawer @bind-Open="open" Elevation="1" Variant="@DrawerVariant.Temporary">
+            <MudDrawerHeader>
+                <MudText Typo="Typo.h6">PD Sales Schedule</MudText>
+            </MudDrawerHeader>
+            <NavMenu OnTitleChanged="TitleChanged" />
+        </MudDrawer>
+    </AuthorizeView>
+    <MudMainContent Class="pt-16 px-3" Style="height: 100vh;">
+        @Body
+    </MudMainContent>
+</MudLayout>
+
+<MudThemeProvider Theme="darkTheme" />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+@code {
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthState { get; set; }
+    private System.Security.Claims.ClaimsPrincipal user;
+
+    public string LayoutTitle { get; set; } = "Status";
+
+    private void TitleChanged(string newTitle)
+    {
+        LayoutTitle = newTitle;
+        StateHasChanged();
+    }
+
+    protected async override Task OnInitializedAsync()
+    {
+        base.OnInitialized();
+
+        user = (await AuthState).User;
+
+        string tokenExpirationString = user.FindFirst("exp") != null ? user.FindFirst("exp").Value : "";
+        if (!string.IsNullOrWhiteSpace(tokenExpirationString))
+        {
+            var expirationDate = DateTimeOffset.FromUnixTimeSeconds(Convert.ToInt64(tokenExpirationString)).DateTime;
+
+            if (expirationDate < DateTime.Now)
+            {
+                _navigationManager.NavigateTo($"logout");
+                NavigateToLogin();
+            }
+        }
+
+        if (!user.Identity.IsAuthenticated)
+        {
+            NavigateToLogin();
+        }
+    }
+
+    private void NavigateToLogin()
+    {
+        var returnUrl = WebUtility.UrlEncode(new Uri(_navigationManager.Uri).PathAndQuery);
+        if (returnUrl.Contains("login"))
+        {
+            _navigationManager.NavigateTo($"login");
+        }
+        else
+        {
+            _navigationManager.NavigateTo($"login?returnUrl={returnUrl}");
+        }
+    }
+
+    MudTheme darkTheme = new MudTheme()
+    {
+        Palette = new Palette()
+        {
+            Primary = "#00cf34",
+            Secondary = "#cf009b",
+            Black = "#27272f",
+            Background = "#32333d",
+            BackgroundGrey = "#27272f",
+            Surface = "#373740",
+            DrawerBackground = "#27272f",
+            DrawerText = "rgba(255,255,255, 0.50)",
+            DrawerIcon = "rgba(255,255,255, 0.50)",
+            AppbarBackground = "#27272f",
+            AppbarText = "rgba(255,255,255, 0.70)",
+            TextPrimary = "rgba(255,255,255, 0.70)",
+            TextSecondary = "rgba(255,255,255, 0.50)",
+            ActionDefault = "#adadb1",
+            ActionDisabled = "rgba(255,255,255, 0.26)",
+            ActionDisabledBackground = "rgba(255,255,255, 0.12)",
+            Divider = "rgba(255,255,255, 0.12)",
+            DividerLight = "rgba(255,255,255, 0.06)",
+            TableLines = "rgba(255,255,255, 0.12)",
+            LinesDefault = "rgba(255,255,255, 0.12)",
+            LinesInputs = "rgba(255,255,255, 0.3)",
+            TextDisabled = "rgba(255,255,255, 0.2)",
+            Dark = "#c1c1c1"
+        }
+    };
+
+    bool open = false;
+
+    void ToggleDrawer()
+    {
+        open = !open;
+    }
+}

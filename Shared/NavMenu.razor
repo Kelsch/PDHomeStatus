@@ -1,0 +1,23 @@
+﻿<MudNavMenu @onclick="ChangeTitle" Style="height: 100%; display: flex; flex-direction: column;">
+    @*<MudElement @onclick="@(() => SetNavigateToPage("Home"))"><MudNavLink Match="NavLinkMatch.All" Href="">Home</MudNavLink></MudElement>*@
+    <MudElement @onclick="@(() => SetNavigateToPage("Status"))"><MudNavLink Match="NavLinkMatch.All" Href="status">Status</MudNavLink></MudElement>
+    <MudAppBarSpacer />
+    <MudElement @onclick="@(() => SetNavigateToPage("Logout"))"><MudNavLink Match="NavLinkMatch.All" Href="logout">Logout</MudNavLink></MudElement>
+</MudNavMenu>
+
+@code {
+    [Parameter]
+    public Action<string> OnTitleChanged { get; set; }
+
+    private string NavigateToPage = "Status";
+
+    private void ChangeTitle()
+    {
+        OnTitleChanged?.Invoke(NavigateToPage);
+    }
+
+    private void SetNavigateToPage(string pageTitle)
+    {
+        NavigateToPage = pageTitle;
+    }
+}
